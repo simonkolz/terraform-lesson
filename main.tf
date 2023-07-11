@@ -53,3 +53,25 @@ resource "aws_route_table_association" "rt_associate" {
 }
 
 
+
+resource "aws_security_group" "allow_http" {
+  name        = "allow_http"
+  description = "Allow http from vpc"
+  vpc_id      = aws_vpc.simonvpc.id
+
+   ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+
+   }
+} 
+
+provider "aws" {
+  access_key = "AKIAWZZ73FKZYGBEJTMJ"
+  secret_key = "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"
+  region     = "eu-west-2"
+}
+
+
