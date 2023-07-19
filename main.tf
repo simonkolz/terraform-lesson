@@ -17,7 +17,6 @@ resource "aws_internet_gateway" "main" {
         
 }
 
-
 resource "aws_subnet" "public-subnets" {
     count = 3
     vpc_id = aws_vpc.main.id
@@ -96,7 +95,7 @@ resource "aws_security_group" "main" {
 resource "aws_instance" "main" {
     count = 3
     ami = "ami-0eb260c4d5475b901"
-    key_name = "dev"
+    key_name = "true"
     instance_type = "t2.micro"
     vpc_security_group_ids = [aws_security_group.main.id]
     user_data = filebase64("script.sh")
@@ -108,7 +107,26 @@ resource "aws_instance" "main" {
     tags = {
         Name = "${element(var.public_subnet, count.index)}-instance"
     }
+
+
 }
+
+resource "aws_eip" "lb" {
+    count = 3
+    vpc = true
+}
+
+resource "aws_nat_gateway" "main" {
+    count = 3
+    allocation_id = element(aws_eip.lb.*.id, count.index)
+    subnet_id = element(aws_subnet.public-subnets.*.id, count.index)
+
+    tags = {
+        Name = "${element(var.nat_gateway, count.index)}" 
+    }
+}
+
+
 
 resource "aws_lb_target_group" "main" {
   name     = "simon-tg"
@@ -119,7 +137,76 @@ resource "aws_lb_target_group" "main" {
 
 resource "aws_lb_target_group_attachment" "main" {
     count = 3
-    target_group_arn = aws_lb_target_group.main.arn
+    target_group_arn = "${aws_lb_target_group.main.arn}"
     target_id = element(aws_instance.main.*.id, count.index)
     port = 80
 }
+
+resource "aws_lb" "main" {
+    load_balancer_type = "application"
+    subnets = [for subnet in aws_subnet.public-subnets : subnet.id]
+    security_groups = [aws_security_group.main.id]
+}
+
+resource "aws_lb_listener" "front_end" {
+    load_balancer_arn = aws_lb.main.arn
+    port = "443"
+    protocol = "HTTPS"
+    ssl_policy = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+    certificate_arn = aws_acm_certificate.cert.arn
+
+
+    default_action {
+        type = "forward"
+        target_group_arn = aws_lb_target_group.main.arn
+
+  }
+
+}
+    
+data "aws_route53_zone" "public" {
+    name = "kolz.link"
+    private_zone = false
+}
+
+resource "aws_acm_certificate" "cert" {
+    domain_name = "*.kolz.link"
+    validation_method = "DNS"
+    subject_alternative_names = ["www.kolz.link"]
+
+    lifecycle {
+        create_before_destroy = true
+    }
+}
+
+resource "aws_route53_record" "validation" {
+    for_each = {
+        for x in aws_acm_certificate.cert.domain_validation_options : x.domain_name => {
+            name = x.resource_record_name
+            record = x.resource_record_value
+            type = x.resource_record_type
+            zone_id = x.domain_name == "kolz.link" ? data.aws_route53_zone.public.zone_id : data.aws_route53_zone.public.zone_id
+        }
+    }
+    allow_overwrite = true 
+    name = each.value.name
+    records = [each.value.record]
+    ttl = 300
+    type = each.value.type
+    zone_id = "Z0561335343HFQ40JFOWR"
+}
+
+resource "aws_route53_record" "www" {
+    zone_id = "Z0561335343HFQ40JFOWR"
+    name = "www.kolz.link"
+    type = "A"
+
+    alias {
+        name = aws_lb.main.dns_name
+        zone_id = aws_lb.main.zone_id 
+        evaluate_target_health = true
+    }
+}
+
+
+

@@ -39,3 +39,9 @@ variable "privatecidrs" {
     default = ["192.168.0.48/28", "192.168.0.64/28", "192.168.0.80/28"]
     type = list(string)
 }
+
+variable "nat_gateway" {
+    description = "nat gateway"
+    default = ["nat-gateway1", "nat-gateway2", "nat-gateway3"]
+    type = list(string)
+}
