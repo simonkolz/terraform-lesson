@@ -64,7 +64,7 @@ resource "aws_route_table_association" "main" {
 }
 
 resource "aws_security_group" "main" {
-    name = "allow_tls"
+    name = "alloxw_tls"
     description = "Allow TLS inbound traffic"
     vpc_id = aws_vpc.main.id
 
