@@ -22,6 +22,7 @@ resource "aws_subnet" "public-subnets" {
     vpc_id = aws_vpc.main.id
     cidr_block = element((var.cidrs), count.index)
     availability_zone = element((var.az), count.index)
+    map_public_ip_on_launch = true
 
      tags = {
         Name = "${element(var.public_subnet, count.index)}"
@@ -83,6 +84,8 @@ resource "aws_security_group" "main" {
         cidr_blocks = ["0.0.0.0/0"]
 
     }
+
+    
     egress {
         description = "HTTP from VPC"
         from_port   = 0
@@ -92,24 +95,24 @@ resource "aws_security_group" "main" {
     }
 
 }
-resource "aws_instance" "main" {
-    count = 3
-    ami = "ami-0eb260c4d5475b901"
-    key_name = "true"
-    instance_type = "t2.micro"
-    vpc_security_group_ids = [aws_security_group.main.id]
-    user_data = filebase64("script.sh")
-    associate_public_ip_address = true 
+# resource "aws_instance" "main" {
+#     count = 3
+#     ami = "ami-0eb260c4d5475b901"
+#     key_name = "true"
+#     instance_type = "t2.micro"
+#     vpc_security_group_ids = [aws_security_group.main.id]
+#     user_data = filebase64("script.sh")
+#     associate_public_ip_address = true 
     
-    subnet_id = element(aws_subnet.public-subnets.*.id, count.index)
+#     subnet_id = element(aws_subnet.public-subnets.*.id, count.index)
 
 
-    tags = {
-        Name = "${element(var.public_subnet, count.index)}-instance"
-    }
+#     tags = {
+#         Name = "${element(var.public_subnet, count.index)}-instance"
+#     }
 
 
-}
+# }
 
 resource "aws_eip" "lb" {
     count = 3
@@ -135,12 +138,12 @@ resource "aws_lb_target_group" "main" {
   vpc_id   = aws_vpc.main.id
 }
 
-resource "aws_lb_target_group_attachment" "main" {
-    count = 3
-    target_group_arn = "${aws_lb_target_group.main.arn}"
-    target_id = element(aws_instance.main.*.id, count.index)
-    port = 80
-}
+#resource "aws_lb_target_group_attachment" "main" {
+ #   count = 3
+  #  target_group_arn = "${aws_lb_target_group.main.arn}"
+   # target_id = aws_launch_template.main.id
+    #port = 80
+#}
 
 resource "aws_lb" "main" {
     load_balancer_type = "application"
@@ -209,4 +212,105 @@ resource "aws_route53_record" "www" {
 }
 
 
+resource "aws_s3_bucket" "main" {
+    bucket = "kolzy-bucket-123"
+    
 
+    tags = {
+        Name = "Simon bucket"
+        Environment = "Dev"
+    }
+}
+
+resource "aws_s3_bucket_ownership_controls" "main" {
+  bucket = aws_s3_bucket.main.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "main" {
+  bucket = aws_s3_bucket.main.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+resource "aws_s3_bucket_acl" "main" {
+  depends_on = [
+    aws_s3_bucket_ownership_controls.main,
+    aws_s3_bucket_public_access_block.main,
+  ]
+
+  bucket = aws_s3_bucket.main.id
+  acl    = "public-read"
+}
+
+
+resource "aws_s3_bucket_website_configuration" "main" {
+  bucket = aws_s3_bucket.main.bucket
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "error.html"
+  }
+
+  routing_rule {
+    condition {
+      key_prefix_equals = "docs/"
+    }
+    redirect {
+      replace_key_prefix_with = "documents/"
+    }
+  }
+  depends_on = [aws_s3_bucket.main]
+}
+
+resource "aws_s3_bucket_object" "object" {
+  bucket = aws_s3_bucket.main.id
+  key    = "index.html"
+  source = "index.html"
+
+  depends_on = [aws_s3_bucket.main]
+}  
+
+
+resource "aws_launch_template" "main" {
+
+    name_prefix = "simonlt"
+    image_id = "ami-0eb260c4d5475b901"
+    instance_type = "t2.micro"
+    vpc_security_group_ids = [aws_security_group.main.id]
+    key_name = "true"
+    user_data = filebase64("script.sh")
+    
+    
+    
+}
+
+resource "aws_autoscaling_group" "main" {
+  desired_capacity   = 3
+  max_size           = 5
+  min_size           = 1
+  vpc_zone_identifier = aws_subnet.public-subnets.*.id
+
+  launch_template {
+    id      = aws_launch_template.main.id
+    version = "$Latest"
+  }
+}
+
+resource "aws_autoscaling_attachment" "main" {
+  autoscaling_group_name = aws_autoscaling_group.main.id
+  lb_target_group_arn    = aws_lb_target_group.main.arn
+  
+  
+
+
+
+}
