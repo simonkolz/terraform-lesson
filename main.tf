@@ -249,6 +249,7 @@ resource "aws_s3_bucket_acl" "main" {
 }
 
 
+
 resource "aws_s3_bucket_website_configuration" "main" {
   bucket = aws_s3_bucket.main.bucket
 
